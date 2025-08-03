@@ -18,6 +18,8 @@ Message = Union[
     ChatCompletionAssistantMessageParam,
 ]
 
+OBSIDIAN_FILEPATH = "/home/noob/programs/Obsidian"
+
 
 class OpenAIBaseClient:
     """Base client for OpenAI chat completions."""
@@ -34,10 +36,26 @@ class OpenAIBaseClient:
         self.messages.append({"role": "assistant", "content": [{"type": "text", "text": content}]})
 
     def set_system_prompt(self, system_prompt: str) -> None:
-        if self.messages and self.messages[0]["role"] == "system":
-            self.messages[0]["content"] = [{"type": "text", "text": system_prompt}]
-        else:
-            self.messages.insert(0, {"role": "system", "content": [{"type": "text", "text": system_prompt}]})
+        self.messages.insert(0, {"role": "system", "content": [{"type": "text", "text": system_prompt}]})
+
+    #    def reset_history(self) -> None:
+    #        """Reset the chat history."""
+    #        self.messages = []
+
+    def write_to_md(self, filename: str, obsidian_filepath: Optional[str]) -> None:
+        """Write the chat messages to a markdown file."""
+
+        if not filename.endswith(".md"):
+            filename += ".md"
+
+        file_path = OBSIDIAN_FILEPATH if obsidian_filepath is None else OBSIDIAN_FILEPATH + "/" + obsidian_filepath
+
+        with open(file_path + "/" + filename, "w") as f:
+            # select all assistant messages
+            assistant_messages = [msg for msg in self.messages if msg["role"] == "assistant"]
+            latest_assistant_message = assistant_messages[-1]  # Get the latest assistant message
+            content = latest_assistant_message["content"][0]["text"]
+            f.write(content)
 
     def chat(self, user_message: str) -> str:
         self.add_user_message(user_message)
