@@ -31,6 +31,9 @@ select = [
   "ARG", # unused arguments
   "RUF"  # Ruff-native rules
 ]
+ignore = [
+  "RUF100"
+]
 
 [tool.ruff.lint.isort]
 force-sort-within-sections = true
