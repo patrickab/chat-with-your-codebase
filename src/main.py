@@ -35,6 +35,35 @@ DEFAULT_PROMPT = """
 """
 
 
+def _apply_custom_style() -> None:
+    st.markdown(
+        """
+        <style>
+        /* Overall app background and text color */
+        .stApp {
+            background-color: #121212;
+            color: #e0e0e0;
+            font-family: 'Georgia', 'Times New Roman', serif;
+        }
+
+        /* Ensure all text uses the newspaper-style font */
+        p, div, span, h1, h2, h3, h4, h5, h6 {
+            color: #e0e0e0;
+            font-family: 'Georgia', 'Times New Roman', serif;
+        }
+
+        /* Input elements with matching dark theme */
+        textarea, input {
+            background-color: #1e1e1e;
+            color: #e0e0e0;
+            font-family: 'Georgia', 'Times New Roman', serif;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def _init_session_state() -> None:
     if "client" not in st.session_state:
         st.session_state.system_prompts = {"Obsidian Wiki": DEFAULT_PROMPT}
@@ -108,6 +137,8 @@ def main() -> None:
     """Main function to run the Streamlit app."""
 
     st.set_page_config(page_title="OpenAI Chat", page_icon=":robot:", layout="wide", initial_sidebar_state="collapsed")
+
+    _apply_custom_style()
 
     _init_session_state()
     _application_side_bar()
