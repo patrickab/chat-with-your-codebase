@@ -18,7 +18,7 @@ Message = Union[
     ChatCompletionAssistantMessageParam,
 ]
 
-OBSIDIAN_FILEPATH = "/home/noob/programs/Obsidian"
+OBSIDIAN_VAULT = "/home/noob/programs/Obsidian"
 
 
 class OpenAIBaseClient:
@@ -42,13 +42,13 @@ class OpenAIBaseClient:
     #        """Reset the chat history."""
     #        self.messages = []
 
-    def write_to_md(self, filename: str, obsidian_filepath: Optional[str]) -> None:
+    def write_to_md(self, filename: str) -> None:
         """Write the chat messages to a markdown file."""
 
         if not filename.endswith(".md"):
             filename += ".md"
 
-        file_path = OBSIDIAN_FILEPATH if obsidian_filepath is None else OBSIDIAN_FILEPATH + "/" + obsidian_filepath
+        file_path = OBSIDIAN_VAULT + filename
 
         with open(file_path + "/" + filename, "w") as f:
             # select all assistant messages

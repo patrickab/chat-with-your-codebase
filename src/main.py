@@ -42,7 +42,6 @@ def _init_session_state() -> None:
         st.session_state.selected_model = "gpt-4.1-mini"
         st.session_state.client = OpenAIBaseClient(st.session_state.selected_model)
         st.session_state.client.set_system_prompt(DEFAULT_PROMPT)
-        st.session_state.i = 0  # Counter for assistant responses
 
 
 def _application_side_bar() -> None:
@@ -93,13 +92,16 @@ def _chat_interface() -> None:
             with st.chat_message("assistant"):
                 st.session_state.client.chat(prompt)
                 # Ignore the first message (system prompt) & reverse the order for display
+                i = 0
                 for msg in st.session_state.client.messages[1:][::-1]:
                     if msg["role"] == "user":
                         st.chat_message("user").markdown(msg["content"][0]["text"])
                     elif msg["role"] == "assistant":
-                        with st.expander(f"Assistant Response {st.session_state.i}", expanded=False):
+                        # Display the assistant's response in an expander
+                        is_expanded = i == 0
+                        with st.expander(f"Assistant Response {i}", expanded=is_expanded):
                             st.chat_message("assistant").markdown(msg["content"][0]["text"])
-                            st.session_state.i += 1
+                            i += 1
 
 
 def main() -> None:
