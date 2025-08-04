@@ -146,17 +146,17 @@ def _apply_custom_style() -> None:
 
 def _init_session_state() -> None:
     if "client" not in st.session_state:
-        st.session_state.system_prompts = {"Obsidian Wiki": DEFAULT_PROMPT}
-        st.session_state.selected_prompt = "Obsidian Wiki"
+        st.session_state.system_prompts = {"Create Learning Material": SYS_LEARNING_MATERIAL, "Debugging Joke": SYS_DEBUGGING_PROMPT}
+        st.session_state.selected_prompt = "Create Learning Material"
         st.session_state.selected_model = "gpt-4.1-mini"
         st.session_state.client = OpenAIBaseClient(st.session_state.selected_model)
-        st.session_state.client.set_system_prompt(DEFAULT_PROMPT)
+        st.session_state.client.set_system_prompt(SYS_LEARNING_MATERIAL)
 
 
 def _application_side_bar() -> None:
     model = st.sidebar.selectbox(
         "Model",
-        ["gpt-4.1-mini", "gpt-4.1", "gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"],
+        ["gpt-4.1", "gpt-4.1-nano", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"],
         key="model_select",
         help="Select Model",
     )
