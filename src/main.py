@@ -176,41 +176,60 @@ def _application_side_bar() -> None:
         st.session_state.selected_model = model
 
 
+def _render_messages(message_container) -> None:  # noqa
+    """Render chat messages from session state."""
+
+    message_container.empty()  # Clear previous messages
+
+    messages = st.session_state.client.messages[1:][::-1]
+
+    with message_container:
+        for i in range(0, len(messages), 2):
+            is_expanded = i == 0
+            label = f"QA-Pair  {i // 2}: "
+            user_msg = messages[i + 1]["content"][0]["text"]
+            assistant_msg = messages[i]["content"][0]["text"]
+
+            with st.expander(label + user_msg, expanded=is_expanded):
+                # Display user and assistant messages
+                st.chat_message("user").markdown(user_msg)
+                st.chat_message("assistant").markdown(assistant_msg)
+
+
 def _chat_interface() -> None:
-    col_left, col_right = st.columns([2, 4])
+    col_left, col_right = st.columns([0.382, 0.618])  # Golden ratio
 
     with col_left:
         with st.expander("Options", expanded=False):
             if st.button("Reset History", key="reset_history"):
                 st.session_state.client.reset_history()
-
-            filename = st.text_input("Filename", key="filename_input", placeholder="Filename .md")
-            if st.button("Save to Markdown", key="save_to_md"):
-                st.session_state.client.write_to_md(filename)
-                st.success(f"Chat history saved to {filename}")
+            with st.expander("Store answer", expanded=True):
+                try:
+                    idx_input = st.text_input("Index of message to save", key="index_input")
+                    idx = int(idx_input) if idx_input.strip() else 0
+                except ValueError:
+                    st.error("Please enter a valid integer")
+                    idx = 0
+                filename = st.text_input("Filename", key="filename_input")
+                if st.button("Save to Markdown", key="save_to_md"):
+                    st.session_state.client.write_to_md(filename, idx)
+                    st.success(f"Chat history saved to {filename}")
 
         prompt = st.text_area("Send a message", key="left_chat_input", height=200)
         send_btn = st.button("Send", key="send_btn")
+        st.markdown("---")
 
     with col_right:
         st.subheader("Chat Interface")
         st.markdown("---")
         st.write("")  # Spacer
+        message_container = st.container()
+        _render_messages(message_container)
 
         if send_btn and prompt:
             with st.chat_message("assistant"):
                 st.session_state.client.chat(prompt)
-                # Ignore the first message (system prompt) & reverse the order for display
-                i = 0
-                for msg in st.session_state.client.messages[1:][::-1]:
-                    if msg["role"] == "user":
-                        st.chat_message("user").markdown(msg["content"][0]["text"])
-                    elif msg["role"] == "assistant":
-                        # Display the assistant's response in an expander
-                        is_expanded = i == 0
-                        with st.expander(f"Assistant Response {i}", expanded=is_expanded):
-                            st.chat_message("assistant").markdown(msg["content"][0]["text"])
-                            i += 1
+                st.rerun()
 
 
 def main() -> None:
