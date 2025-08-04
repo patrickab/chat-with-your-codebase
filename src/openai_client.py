@@ -64,6 +64,16 @@ class OpenAIBaseClient:
             content = assistant_message["content"][0]["text"]
             f.write(content)
 
+        md = "markdown"
+        if not os.path.exists(os.path.dirname(md)):
+            os.makedirs(os.path.dirname(md))
+
+        local_path = os.path.join(__file__, md, filename)
+        with open(local_path, "w") as f:
+            # select all assistant messages
+            content = assistant_message["content"][0]["text"]
+            f.write(content)
+
     def chat(self, user_message: str) -> str:
         self.add_user_message(user_message)
         response = self.client.chat.completions.create(model=self.model, messages=self.messages, stream=False)
