@@ -1,7 +1,7 @@
 from __future__ import annotations  # noqa: I001
 
 import os
-from typing import List, Union, Optional
+from typing import List, Union
 from openai import OpenAI
 from openai.types.chat import (
     ChatCompletionSystemMessageParam,
@@ -36,25 +36,38 @@ class OpenAIBaseClient:
         self.messages.append({"role": "assistant", "content": [{"type": "text", "text": content}]})
 
     def set_system_prompt(self, system_prompt: str) -> None:
-        self.messages.insert(0, {"role": "system", "content": [{"type": "text", "text": system_prompt}]})
+        if not self.messages:
+            # Initialize with system prompt if no messages exist
+            self.messages.append({"role": "system", "content": [{"type": "text", "text": system_prompt}]})
+        else:
+            # Replace the existing system prompt
+            self.messages[0] = {"role": "system", "content": [{"type": "text", "text": system_prompt}]}
 
-    #    def reset_history(self) -> None:
-    #        """Reset the chat history."""
-    #        self.messages = []
+    def reset_history(self) -> None:
+        """Reset the chat history."""
+        self.messages = []
 
-    def write_to_md(self, filename: str) -> None:
-        """Write the chat messages to a markdown file."""
+    def write_to_md(self, filename: str, idx: int) -> None:
+        """Write a assistant response to .md."""
 
         if not filename.endswith(".md"):
             filename += ".md"
 
-        file_path = OBSIDIAN_VAULT + filename
+        # Omit first message (system prompt) & reverse order
+        messages = self.messages[1:][::-1]
+        assistant_message = messages[idx * 2]
 
-        with open(file_path + "/" + filename, "w") as f:
+        file_path = OBSIDIAN_VAULT + "/" + filename
+
+        with open(file_path, "w") as f:
             # select all assistant messages
-            assistant_messages = [msg for msg in self.messages if msg["role"] == "assistant"]
-            latest_assistant_message = assistant_messages[-1]  # Get the latest assistant message
-            content = latest_assistant_message["content"][0]["text"]
+            content = assistant_message["content"][0]["text"]  # noqa
+            f.write(content)
+
+        md = "markdown"
+        # create file in ./markdown/<filename>
+        with open(os.path.join(md, filename), "w") as f:
+            content = assistant_message["content"][0]["text"]
             f.write(content)
 
     def chat(self, user_message: str) -> str:
