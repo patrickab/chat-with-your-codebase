@@ -1,7 +1,7 @@
 from __future__ import annotations  # noqa: I001
 
 import os
-from typing import List, Union, Optional
+from typing import List, Union
 from openai import OpenAI
 from openai.types.chat import (
     ChatCompletionSystemMessageParam,
@@ -61,16 +61,12 @@ class OpenAIBaseClient:
 
         with open(file_path, "w") as f:
             # select all assistant messages
-            content = assistant_message["content"][0]["text"]
+            content = assistant_message["content"][0]["text"]  # noqa
             f.write(content)
 
         md = "markdown"
-        if not os.path.exists(os.path.dirname(md)):
-            os.makedirs(os.path.dirname(md))
-
-        local_path = os.path.join(__file__, md, filename)
-        with open(local_path, "w") as f:
-            # select all assistant messages
+        # create file in ./markdown/<filename>
+        with open(os.path.join(md, filename), "w") as f:
             content = assistant_message["content"][0]["text"]
             f.write(content)
 
