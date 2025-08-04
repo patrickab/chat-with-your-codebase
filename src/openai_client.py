@@ -43,6 +43,11 @@ class OpenAIBaseClient:
             # Replace the existing system prompt
             self.messages[0] = {"role": "system", "content": [{"type": "text", "text": system_prompt}]}
 
+    def add_context(self, content: str) -> None:
+        """Add contextual information as a system message."""
+
+        self.messages.append({"role": "system", "content": [{"type": "text", "text": content}]})
+
     def reset_history(self) -> None:
         """Reset the chat history."""
         self.messages = []

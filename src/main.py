@@ -2,7 +2,7 @@ from __future__ import annotations
 import streamlit as st
 
 from openai_client import OpenAIBaseClient
-from src.lib.prompts import SYS_DEBUGGING_PROMPT, SYS_JUPYTER_NOTEBOOK, SYS_LEARNING_MATERIAL
+from src.lib.prompts import SYS_DEBUGGING_PROMPT, SYS_LEARNING_MATERIAL
 
 
 def _apply_custom_style() -> None:
@@ -64,6 +64,7 @@ def _init_session_state() -> None:
         st.session_state.selected_model = "gpt-4.1-mini"
         st.session_state.client = OpenAIBaseClient(st.session_state.selected_model)
         st.session_state.client.set_system_prompt(SYS_LEARNING_MATERIAL)
+        st.session_state.uploaded_context_files = set()
 
 
 def _application_side_bar() -> None:
@@ -127,6 +128,15 @@ def _chat_interface() -> None:
                 if st.button("Save to Markdown", key="save_to_md"):
                     st.session_state.client.write_to_md(filename, idx)
                     st.success(f"Chat history saved to {filename}")
+            with st.expander("Context", expanded=False):
+                uploaded_files = st.file_uploader("Add Context", accept_multiple_files=True)
+                if uploaded_files:
+                    for uploaded in uploaded_files:
+                        if uploaded.name not in st.session_state.uploaded_context_files:
+                            content = uploaded.read().decode("utf-8", errors="ignore")
+                            st.session_state.client.add_context(content)
+                            st.session_state.uploaded_context_files.add(uploaded.name)
+                            st.success(f"Added context from {uploaded.name}")
 
         prompt = st.text_area("Send a message", key="left_chat_input", height=200)
         send_btn = st.button("Send", key="send_btn")
