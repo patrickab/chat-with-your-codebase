@@ -96,24 +96,47 @@ def _apply_custom_style() -> None:
     st.markdown(
         """
         <style>
-        /* Overall app background and text color */
+        /* Overall app background and text color with Cascadia Code */
         .stApp {
             background-color: #121212;
             color: #e0e0e0;
-            font-family: 'Georgia', 'Times New Roman', serif;
+            font-family: 'Cascadia Code', 'Georgia', 'Times New Roman', serif;
         }
 
-        /* Ensure all text uses the newspaper-style font */
+        /* General text inherits Cascadia Code */
         p, div, span, h1, h2, h3, h4, h5, h6 {
             color: #e0e0e0;
-            font-family: 'Georgia', 'Times New Roman', serif;
+            font-family: 'Cascadia Code', 'Georgia', 'Times New Roman', serif;
         }
 
         /* Input elements with matching dark theme */
         textarea, input {
             background-color: #1e1e1e;
             color: #e0e0e0;
-            font-family: 'Georgia', 'Times New Roman', serif;
+            font-family: 'Cascadia Code', 'Georgia', 'Times New Roman', serif;
+        }
+
+        /* Code, pre, and LaTeX math uses Roboto Mono with default coloring */
+        code, pre, .math {
+            font-family: 'Roboto Mono', monospace;
+            background-color: #1e1e1e; /* subtle dark block background */
+            padding: 4px 6px;
+            border-radius: 6px;
+            line-height: 1.4;
+            white-space: pre-wrap;
+            word-break: break-word;
+            user-select: text;
+        }
+
+        /* Box shadow for code blocks */
+        pre {
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+        }
+
+        /* Hover effect on inline code */
+        code:hover {
+            background-color: #2a2a2a;
+            cursor: text;
         }
         </style>
         """,
