@@ -2,7 +2,7 @@ from __future__ import annotations
 import streamlit as st
 
 from openai_client import OpenAIBaseClient
-from src.lib.prompts import SYS_DEBUGGING_PROMPT, SYS_JUPYTER_NOTEBOOK, SYS_LEARNING_MATERIAL
+from src.lib.prompts import SYS_DEBUGGING_PROMPT, SYS_JUPYTER_NOTEBOOK, SYS_LEARNING_MATERIAL, SYS_PROFESSOR_EXPLAINS
 
 
 def _apply_custom_style() -> None:
@@ -59,7 +59,12 @@ def _apply_custom_style() -> None:
 
 def _init_session_state() -> None:
     if "client" not in st.session_state:
-        st.session_state.system_prompts = {"Create Learning Material": SYS_LEARNING_MATERIAL, "Debugging Joke": SYS_DEBUGGING_PROMPT}
+        st.session_state.system_prompts = {
+            "Create Learning Material": SYS_LEARNING_MATERIAL,
+            "Professor Explains": SYS_PROFESSOR_EXPLAINS,
+            "Jupyter Notebook": SYS_JUPYTER_NOTEBOOK,
+            "Debugging Joke": SYS_DEBUGGING_PROMPT,
+        }
         st.session_state.selected_prompt = "Create Learning Material"
         st.session_state.selected_model = "gpt-4.1-mini"
         st.session_state.client = OpenAIBaseClient(st.session_state.selected_model)
@@ -69,7 +74,7 @@ def _init_session_state() -> None:
 def _application_side_bar() -> None:
     model = st.sidebar.selectbox(
         "Model",
-        ["gpt-4.1", "gpt-4.1-nano", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"],
+        ["gpt-5", "gpt-4.1", "gpt-4.1-nano", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"],
         key="model_select",
         help="Select Model",
     )
