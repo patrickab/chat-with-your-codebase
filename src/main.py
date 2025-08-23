@@ -1,6 +1,7 @@
 from __future__ import annotations
 import streamlit as st
 
+from src.codebase_tokenizer import render_codebase_tokenizer
 from src.lib.streamlit_helper import application_side_bar, apply_custom_style, init_session_state, render_messages
 
 
@@ -49,13 +50,15 @@ def main() -> None:
     init_session_state()
     application_side_bar()
 
-    chat_interface, _ = st.tabs(["OpenAI - Custom Chat Interface", "Work in Progress"])
+    chat_interface, work_in_progress = st.tabs(
+        ["OpenAI - Custom Chat Interface", "Work in Progress"]
+    )
 
     with chat_interface:
         _chat_interface()
 
-    with _:
-        st.write("Work in progress")
+    with work_in_progress:
+        render_codebase_tokenizer()
 
 
 if __name__ == "__main__":
