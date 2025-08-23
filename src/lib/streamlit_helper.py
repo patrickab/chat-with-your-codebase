@@ -1,7 +1,10 @@
 """Streamlit helper functions."""
 
+from pathlib import Path
+
 import streamlit as st
 
+from src.codebase_tokenizer import _find_git_repos
 from src.lib.prompts import SYS_DEBUGGING_PROMPT, SYS_JUPYTER_NOTEBOOK, SYS_LEARNING_MATERIAL, SYS_PROFESSOR_EXPLAINS
 from src.openai_client import OpenAIBaseClient
 
@@ -93,6 +96,13 @@ def application_side_bar() -> None:
 
     if model != st.session_state.selected_model:
         st.session_state.selected_model = model
+
+    repos = _find_git_repos(Path.home())
+    if repos:
+        repo = st.sidebar.selectbox("Repository", repos, format_func=lambda p: p.name)
+        st.session_state.selected_repo = str(repo)
+    else:
+        st.sidebar.info("No Git repositories found")
 
 
 def render_messages(message_container) -> None:  # noqa

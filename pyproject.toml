@@ -12,7 +12,6 @@ dependencies = [
     "numpy>=2.3.2",
     "streamlit-agraph>=0.0.45",
     "networkx>=3.3",
-    "python-louvain>=0.16",
 ]
 
 [build-system]
