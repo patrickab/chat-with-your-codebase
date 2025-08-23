@@ -1,3 +1,4 @@
+# ruff: noqa
 SYS_DEBUGGING_PROMPT = """Write a joke about a student who loves debugging."""
 
 
