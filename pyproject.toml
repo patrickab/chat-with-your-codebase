@@ -5,11 +5,14 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "streamlit>=1.47.1", 
+    "streamlit>=1.47.1",
     "openai>=1.98.0",
     "polars>=1.32.3",
     "tiktoken>=0.11.0",
     "numpy>=2.3.2",
+    "networkx>=3.2",
+    "streamlit-agraph>=0.0.45",
+    "python-louvain>=0.16",
 ]
 
 [build-system]
