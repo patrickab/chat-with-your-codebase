@@ -6,9 +6,39 @@ from __future__ import annotations
 import ast
 import subprocess
 from pathlib import Path
+from typing import Iterable
 
 import polars as pl
 import streamlit as st
+
+
+def _render_call_relations(df: pl.DataFrame, idx: int) -> None:
+    """
+    Render expandable sections for the selected chunk's custom calls
+    and the chunks that call it (called_by). Each related chunk can
+    be expanded to inspect its source code.
+    """
+    if not (0 <= idx < df.height):
+        st.warning("Index out of range.")
+        return
+
+    row = df.row(idx, named=True)
+    name_to_row_index: dict[str, int] = {df.row(i, named=True)["name"]: i for i in range(df.height)}
+
+    def _render_group(title: str, names: Iterable[str]) -> None:
+        with st.expander(f"{title} ({len(list(names))})", expanded=False):
+            for n in sorted(set(names)):
+                if n in name_to_row_index:
+                    r_idx = name_to_row_index[n]
+                    r = df.row(r_idx, named=True)
+                    with st.expander(f"{r['kind']} {n}", expanded=False):
+                        st.code(r["code"])
+                        st.caption(f"File: {r['file_path']}")
+                else:
+                    st.write(f"{n} (not found)")
+
+    _render_group("Calls", row["calls"])
+    _render_group("Called by", row["called_by"])
 
 
 def _find_git_repos(base: Path) -> list[Path]:
@@ -30,7 +60,7 @@ def _list_python_files(repo_path: Path) -> list[Path]:
     return [repo_path / f for f in all_files if f.suffix == ".py"]
 
 
-def _find_custom_calls(node: ast.AST, custom_names: set[str]) -> list[str]:
+def _find_calls(node: ast.AST, custom_names: set[str]) -> list[str]:
     """Return names of custom functions/classes called within *node*."""
 
     calls: set[str] = set()
@@ -49,29 +79,6 @@ def _find_custom_calls(node: ast.AST, custom_names: set[str]) -> list[str]:
 
     Visitor().visit(node)
     return sorted(calls)
-
-
-def _chunk_file(repo_path: Path, file_path: Path, custom_names: set[str]) -> list[dict[str, str]]:
-    """Split *file_path* into class and top-level function chunks."""
-    text = file_path.read_text()
-    tree = ast.parse(text)
-    lines = text.splitlines()
-    chunks: list[dict[str, str]] = []
-    for node in tree.body:
-        if isinstance(node, (ast.ClassDef, ast.FunctionDef)):
-            start = node.lineno - 1
-            end = node.end_lineno
-            code = "\n".join(lines[start:end])
-            chunks.append(
-                {
-                    "file_path": str(file_path.relative_to(repo_path)),
-                    "name": node.name,
-                    "kind": "class" if isinstance(node, ast.ClassDef) else "function",
-                    "code": code,
-                    "custom_calls": _find_custom_calls(node, custom_names),
-                }
-            )
-    return chunks
 
 
 def _build_dataframe(repo_path: Path) -> pl.DataFrame:
@@ -103,14 +110,14 @@ def _build_dataframe(repo_path: Path) -> pl.DataFrame:
                         "name": node.name,
                         "kind": "class" if isinstance(node, ast.ClassDef) else "function",
                         "code": code,
-                        "custom_calls": _find_custom_calls(node, custom_names),
+                        "calls": _find_calls(node, custom_names),
                     }
                 )
 
     # Determine which chunks are called by others
     called_by_map: dict[str, list[str]] = {chunk["name"]: [] for chunk in chunks}
     for chunk in chunks:
-        for callee in chunk["custom_calls"]:
+        for callee in chunk["calls"]:
             if callee in called_by_map:
                 called_by_map[callee].append(chunk["name"])
 
@@ -121,8 +128,8 @@ def _build_dataframe(repo_path: Path) -> pl.DataFrame:
 
 
 def render_codebase_tokenizer() -> None:
-    """Render the Streamlit Codebase Chunker tab."""
-    st.subheader("Streamlit Codebase Chunker")
+    """Render the Codebase Tokenizer tab."""
+    st.subheader("Codebase Tokenizer")
 
     repos = _find_git_repos(Path.home())
     if not repos:
@@ -140,6 +147,5 @@ def render_codebase_tokenizer() -> None:
     with st.expander("Display chunk by index"):
         if df.height:
             idx = st.number_input("Chunk index", min_value=0, max_value=df.height - 1, step=1)
-            st.write("Custom calls:", df[idx, "custom_calls"])
-            st.write("Called by:", df[idx, "called_by"])
+            _render_call_relations(df, idx)
             st.code(df[idx, "code"])
