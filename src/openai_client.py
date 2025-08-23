@@ -61,13 +61,13 @@ class OpenAIBaseClient:
 
         with open(file_path, "w") as f:
             # select all assistant messages
-            content = assistant_message["content"][0]["text"]  # noqa
+            content = assistant_message["content"][0]["text"]  # type: ignore
             f.write(content)
 
         md = "markdown"
         # create file in ./markdown/<filename>
         with open(os.path.join(md, filename), "w") as f:
-            content = assistant_message["content"][0]["text"]
+            content = assistant_message["content"][0]["text"]  # type: ignore
             f.write(content)
 
     def chat(self, user_message: str) -> str:
