@@ -30,7 +30,28 @@ def _list_python_files(repo_path: Path) -> list[Path]:
     return [repo_path / f for f in all_files if f.suffix == ".py"]
 
 
-def _chunk_file(repo_path: Path, file_path: Path) -> list[dict[str, str]]:
+def _find_custom_calls(node: ast.AST, custom_names: set[str]) -> list[str]:
+    """Return names of custom functions/classes called within *node*."""
+
+    calls: set[str] = set()
+
+    class Visitor(ast.NodeVisitor):
+        def visit_Call(self, call: ast.Call) -> None:  # noqa: N802 - ast naming
+            func = call.func
+            name = None
+            if isinstance(func, ast.Name):
+                name = func.id
+            elif isinstance(func, ast.Attribute):
+                name = func.attr
+            if name and name in custom_names:
+                calls.add(name)
+            self.generic_visit(call)
+
+    Visitor().visit(node)
+    return sorted(calls)
+
+
+def _chunk_file(repo_path: Path, file_path: Path, custom_names: set[str]) -> list[dict[str, str]]:
     """Split *file_path* into class and top-level function chunks."""
     text = file_path.read_text()
     tree = ast.parse(text)
@@ -47,17 +68,55 @@ def _chunk_file(repo_path: Path, file_path: Path) -> list[dict[str, str]]:
                     "name": node.name,
                     "kind": "class" if isinstance(node, ast.ClassDef) else "function",
                     "code": code,
+                    "custom_calls": _find_custom_calls(node, custom_names),
                 }
             )
     return chunks
 
 
 def _build_dataframe(repo_path: Path) -> pl.DataFrame:
-    """Build a Polars DataFrame of code chunks for *repo_path*."""
+    """Build a Polars DataFrame of code chunks for *repo_path* with call info."""
+
     files = _list_python_files(repo_path)
-    chunks: list[dict[str, str]] = []
+
+    # Gather names of custom classes and top-level functions in the repo
+    custom_names: set[str] = set()
+    parsed_files: dict[Path, tuple[ast.Module, list[str]]] = {}
     for file in files:
-        chunks.extend(_chunk_file(repo_path, file))
+        text = file.read_text()
+        tree = ast.parse(text)
+        parsed_files[file] = (tree, text.splitlines())
+        for node in tree.body:
+            if isinstance(node, (ast.ClassDef, ast.FunctionDef)):
+                custom_names.add(node.name)
+
+    chunks: list[dict[str, object]] = []
+    for file, (tree, lines) in parsed_files.items():
+        for node in tree.body:
+            if isinstance(node, (ast.ClassDef, ast.FunctionDef)):
+                start = node.lineno - 1
+                end = node.end_lineno
+                code = "\n".join(lines[start:end])
+                chunks.append(
+                    {
+                        "file_path": str(file.relative_to(repo_path)),
+                        "name": node.name,
+                        "kind": "class" if isinstance(node, ast.ClassDef) else "function",
+                        "code": code,
+                        "custom_calls": _find_custom_calls(node, custom_names),
+                    }
+                )
+
+    # Determine which chunks are called by others
+    called_by_map: dict[str, list[str]] = {chunk["name"]: [] for chunk in chunks}
+    for chunk in chunks:
+        for callee in chunk["custom_calls"]:
+            if callee in called_by_map:
+                called_by_map[callee].append(chunk["name"])
+
+    for chunk in chunks:
+        chunk["called_by"] = sorted(called_by_map.get(chunk["name"], []))
+
     return pl.DataFrame(chunks)
 
 
@@ -81,4 +140,6 @@ def render_codebase_tokenizer() -> None:
     with st.expander("Display chunk by index"):
         if df.height:
             idx = st.number_input("Chunk index", min_value=0, max_value=df.height - 1, step=1)
+            st.write("Custom calls:", df[idx, "custom_calls"])
+            st.write("Called by:", df[idx, "called_by"])
             st.code(df[idx, "code"])
