@@ -9,7 +9,6 @@ import tokenize
 import numpy as np
 from openai import AsyncOpenAI
 import polars as pl
-import tiktoken
 
 API_KEY = os.getenv("OPENAI_API_KEY")
 MODEL_NAME = "text-embedding-3-large"
@@ -20,8 +19,11 @@ EMBEDDING_DIMENSIONS = 3072
 class DataframeKeys:
     """Keys for the RAG DataFrame"""
 
-    KEY_TITLE = "title"
-    KEY_TXT = "text"
+    KEY_MODULE = "Module"
+    KEY_TITLE = "Name"
+    KEY_TXT = "Code"
+    KEY_CALLED_BY = "Called by"
+    KEY_CALLS = "Calls"
     KEY_NL_EMBEDDINGS = "nl_embeddings"
     KEY_CODE_EMBEDDINGS = "code_embeddings"
     KEY_SIMILARITIES = "similarities"
@@ -30,8 +32,11 @@ class DataframeKeys:
 # Define RAG database schema
 RAG_SCHEMA = pl.DataFrame(
     schema={
+        DataframeKeys.KEY_MODULE: pl.Utf8,
         DataframeKeys.KEY_TITLE: pl.Utf8,
         DataframeKeys.KEY_TXT: pl.Utf8,
+        DataframeKeys.KEY_CALLED_BY: pl.List(pl.Utf8),
+        DataframeKeys.KEY_CALLS: pl.List(pl.Utf8),
         DataframeKeys.KEY_NL_EMBEDDINGS: pl.List(pl.Float64),
         DataframeKeys.KEY_CODE_EMBEDDINGS: pl.List(pl.Float64),
     }
@@ -93,14 +98,6 @@ def split_code_chunk(code_chunk: str) -> tuple[str, str]:
 
 
 @dataclass
-class RAGQuery:
-    """RAG Query Structure"""
-
-    query: str
-    k_queries: int
-
-
-@dataclass
 class RAGResponse:
     """Response from a RAG Database Query"""
 
@@ -136,7 +133,6 @@ class EmbeddingModel:
     def __init__(self) -> None:
         """Initialize the async embedding client and tokenizer."""
         self.client = AsyncOpenAI(api_key=API_KEY)
-        self.tokenizer = tiktoken.get_encoding(MODEL_NAME)
 
     def preprocess_chunks(self, code_chunks: list[str]) -> tuple[list[str], list[str]]:
         """Split chunks and warn if they exceed the token limit."""
@@ -145,28 +141,12 @@ class EmbeddingModel:
         code_texts: list[str] = []
         for chunk in code_chunks:
             nl_chunk, code_chunk = split_code_chunk(chunk)
-            nl_tokens = len(self.tokenizer.encode(nl_chunk))
-            code_tokens = len(self.tokenizer.encode(code_chunk))
-            if nl_tokens > MAX_TOKENS:
-                print(
-                    f"Warning: natural language chunk has {nl_tokens} tokens which exceeds the maximum of {MAX_TOKENS}.",
-                )
-            if code_tokens > MAX_TOKENS:
-                print(
-                    f"Warning: code chunk has {code_tokens} tokens which exceeds the maximum of {MAX_TOKENS}.",
-                )
             nl_texts.append(nl_chunk)
             code_texts.append(code_chunk)
         return nl_texts, code_texts
 
     async def embed(self, text: str) -> np.ndarray:
         """Embed a single text."""
-
-        token_count = len(self.tokenizer.encode(text))
-        if token_count > MAX_TOKENS:
-            print(
-                f"Warning: text has {token_count} tokens which exceeds the maximum of {MAX_TOKENS}.",
-            )
 
         response = await self.client.embeddings.create(
             input=[text],
@@ -250,11 +230,41 @@ class VectorDB:
 class RagDatabase:
     """Database for Retrieval Augmented Generation (RAG)"""
 
-    def __init__(self, vector_db: VectorDB) -> None:
-        self.embedding_model = EmbeddingModel()
+    def __init__(self, vector_db: VectorDB, embedding_model: EmbeddingModel) -> None:
+        self.embedding_model = embedding_model
         self.vector_db = vector_db
 
-    async def rag_process_query(self, rag_query: RAGQuery) -> RAGResponse:
+    async def rag_process_query(self, query: str, k_queries: int) -> RAGResponse:
         """Process RAG query and return relevant results"""
-        query_embedding = await self.embedding_model.embed(rag_query.query)
-        return self.vector_db.similarity_search(query_embedding, rag_query.k_queries)
+        query_embedding = await self.embedding_model.embed(query)
+        return self.vector_db.similarity_search(query_embedding, k_queries)
+
+
+def construct_rag_database(dataframe: pl.DataFrame) -> RagDatabase:
+    """Construct a RAG database from a Polars DataFrame."""
+
+    embedding_model = EmbeddingModel()
+    nl_chunks, code_chunks = embedding_model.preprocess_chunks(dataframe[DataframeKeys.KEY_TXT].to_list())
+
+    try:
+        nl_embeddings, code_embeddings = asyncio.run(embedding_model.embed_code_pairs(nl_chunks, code_chunks))
+    except RuntimeError:
+        # Fallback if an event loop is already running
+        loop = asyncio.get_event_loop()
+        nl_embeddings, code_embeddings = loop.run_until_complete(embedding_model.embed_code_pairs(nl_chunks, code_chunks))
+
+    rag_df = pl.DataFrame(
+        {
+            DataframeKeys.KEY_MODULE: dataframe[DataframeKeys.KEY_MODULE],
+            DataframeKeys.KEY_TITLE: dataframe[DataframeKeys.KEY_TITLE],
+            DataframeKeys.KEY_TXT: dataframe[DataframeKeys.KEY_TXT],
+            DataframeKeys.KEY_CALLED_BY: dataframe[DataframeKeys.KEY_CALLED_BY],
+            DataframeKeys.KEY_CALLS: dataframe[DataframeKeys.KEY_CALLS],
+            DataframeKeys.KEY_NL_EMBEDDINGS: [list(map(float, emb)) for emb in nl_embeddings],
+            DataframeKeys.KEY_CODE_EMBEDDINGS: [list(map(float, emb)) for emb in code_embeddings],
+        }
+    )
+
+    vector_db = VectorDB(dataframe=rag_df)
+    rag_database = RagDatabase(vector_db=vector_db, embedding_model=embedding_model)
+    return rag_database

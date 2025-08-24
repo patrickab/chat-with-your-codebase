@@ -1,6 +1,7 @@
 """Streamlit tab to tokenize codebases into chunks."""
 
 import ast
+import asyncio
 from itertools import cycle
 import math
 from pathlib import Path
@@ -11,6 +12,9 @@ import networkx as nx  # type: ignore
 import polars as pl
 import streamlit as st
 from streamlit_agraph import Config, Edge, Node, agraph  # type: ignore
+
+from src.lib.streamlit_helper import render_messages
+from src.rag_database import DataframeKeys, construct_rag_database
 
 
 def render_call_relations(df: pl.DataFrame, idx: int) -> None:
@@ -24,7 +28,7 @@ def render_call_relations(df: pl.DataFrame, idx: int) -> None:
         return
 
     row = df.row(idx, named=True)
-    name_to_row_index: dict[str, int] = {df.row(i, named=True)["name"]: i for i in range(df.height)}
+    name_to_row_index: dict[str, int] = {df.row(i, named=True)[DataframeKeys.KEY_TITLE]: i for i in range(df.height)}
 
     def _render_group(title: str, names: Iterable[str]) -> None:
         with st.expander(f"{title} ({len(list(names))})", expanded=False):
@@ -33,18 +37,13 @@ def render_call_relations(df: pl.DataFrame, idx: int) -> None:
                     r_idx = name_to_row_index[n]
                     r = df.row(r_idx, named=True)
                     with st.expander(f"{r['kind']} {n}", expanded=False):
-                        st.code(r["code"])
-                        st.caption(f"Module: {r['module']}")
+                        st.code(r[DataframeKeys.KEY_TXT])
+                        st.caption(f"Module: {r[DataframeKeys.KEY_MODULE]}")
                 else:
                     st.write(f"{n} (not found)")
 
-    _render_group("Calls", row["calls"])
-    _render_group("Called by", row["called_by"])
-
-
-def _find_git_repos(base: Path) -> list[Path]:
-    """Return directories in *base* that contain a .git folder."""
-    return [p for p in base.iterdir() if (p / ".git").exists() and p.is_dir()]
+    _render_group("Calls", row[DataframeKeys.KEY_CALLS])
+    _render_group("Called by", row[DataframeKeys.KEY_CALLED_BY])
 
 
 def _list_python_files(repo_path: Path) -> list[Path]:
@@ -108,40 +107,41 @@ def _build_dataframe(repo_path: Path) -> pl.DataFrame:
                 module_path = file.relative_to(repo_path).with_suffix("")
                 module = ".".join(module_path.parts)
                 full_name = f"{module}.{node.name}"
+                # Use DataFrame Keys only for RAG intermodular consistencies - full name, loc, docstring are not relevant for rag
                 chunks.append(
                     {
-                        "module": module,
-                        "name": node.name,
+                        DataframeKeys.KEY_MODULE: module,
+                        DataframeKeys.KEY_TITLE: node.name,
                         "full_name": full_name,
                         "kind": "class" if isinstance(node, ast.ClassDef) else "function",
-                        "code": code,
-                        "calls": _find_calls(node, custom_names),
+                        DataframeKeys.KEY_TXT: code,
+                        DataframeKeys.KEY_CALLS: _find_calls(node, custom_names),
                         "loc": end - start,  # type: ignore
                         "docstring": ast.get_docstring(node) or "",
                     }
                 )
 
     # Determine which chunks are called by others
-    called_by_map: dict[str, list[str]] = {chunk["name"]: [] for chunk in chunks}  # type: ignore
+    called_by_map: dict[str, list[str]] = {chunk[DataframeKeys.KEY_TITLE]: [] for chunk in chunks}  # type: ignore
     for chunk in chunks:
-        for callee in chunk["calls"]:  # type: ignore
+        for callee in chunk[DataframeKeys.KEY_CALLS]:  # type: ignore
             if callee in called_by_map:
-                called_by_map[callee].append(chunk["name"])  # type: ignore
+                called_by_map[callee].append(chunk[DataframeKeys.KEY_TITLE])  # type: ignore
 
     for chunk in chunks:
-        chunk["called_by"] = sorted(called_by_map.get(chunk["name"], []))  # type: ignore
+        chunk[DataframeKeys.KEY_CALLED_BY] = sorted(called_by_map.get(chunk[DataframeKeys.KEY_TITLE], []))  # type: ignore
 
     df = pl.DataFrame(chunks)
     return df.select(
         [
-            "module",
-            "name",
+            DataframeKeys.KEY_MODULE,
+            DataframeKeys.KEY_TITLE,
             "docstring",
-            "calls",
-            "called_by",
+            DataframeKeys.KEY_CALLS,
+            DataframeKeys.KEY_CALLED_BY,
             "loc",
             "kind",
-            "code",
+            DataframeKeys.KEY_TXT,
             "full_name",
         ]
     )
@@ -162,14 +162,16 @@ def render_codebase_tokenizer() -> None:
         st.session_state.code_chunks_repo = str(repo)
 
     df = st.session_state.code_chunks
-    display_df = df.select(["module", "name", "docstring", "calls", "called_by", "loc"])
+    display_df = df.select(
+        [DataframeKeys.KEY_MODULE, DataframeKeys.KEY_TITLE, "docstring", DataframeKeys.KEY_CALLS, DataframeKeys.KEY_CALLED_BY, "loc"]
+    )
     st.dataframe(display_df.to_pandas())
 
     with st.expander("Display chunk by index"):
         if df.height:
             idx = st.number_input("Chunk index", min_value=0, max_value=df.height - 1, step=1)
             render_call_relations(df, idx)
-            st.code(df[idx, "code"])
+            st.code(df[idx, DataframeKeys.KEY_TXT])
 
 
 def render_code_graph() -> None:
@@ -183,7 +185,6 @@ def render_code_graph() -> None:
             "<div class='graph-card'><h2>No repo selected</h2><p>Select a repository from the sidebar to see the graph.</p></div>",
             unsafe_allow_html=True,
         )
-        st.button("Select repository", key="select_repo")
         return
     repo = Path(repo_path_str)
 
@@ -207,8 +208,8 @@ def render_code_graph() -> None:
         for row in df.iter_rows(named=True):
             src = row["full_name"]
             G.add_node(src)
-            for callee in row["calls"]:
-                for m in df.filter(pl.col("name") == callee).iter_rows(named=True):
+            for callee in row[DataframeKeys.KEY_CALLS]:
+                for m in df.filter(pl.col(DataframeKeys.KEY_TITLE) == callee).iter_rows(named=True):
                     G.add_edge(src, m["full_name"])
 
         communities = list(nx.algorithms.community.louvain_communities(G.to_undirected()))
@@ -223,7 +224,7 @@ def render_code_graph() -> None:
             "#f8961e",
         ]
         color_cycle = cycle(palette)
-        module_colors = {m: next(color_cycle) for m in df["module"].unique().to_list()}
+        module_colors = {m: next(color_cycle) for m in df[DataframeKeys.KEY_MODULE].unique().to_list()}
         community_colors = {i: next(color_cycle) for i in range(len(communities))}
 
         nodes: list[Node] = []
@@ -231,15 +232,15 @@ def render_code_graph() -> None:
         for row in df.iter_rows(named=True):
             full_id = row["full_name"]
             color = (
-                module_colors[row["module"]]
+                module_colors[row[DataframeKeys.KEY_MODULE]]
                 if graph_type == "Hierarchy"
                 else community_colors.get(community_map.get(full_id, 0), "#AEC6CF")
             )
-            title = f"{row['name']}\n{row['docstring']}\nModule: {row['module']}\nLOC: {row['loc']}"
+            title = f"{row[DataframeKeys.KEY_TITLE]}\n{row['docstring']}\nModule: {row[DataframeKeys.KEY_MODULE]}\nLOC: {row['loc']}"
             nodes.append(
                 Node(
                     id=full_id,
-                    label=row["name"],
+                    label=row[DataframeKeys.KEY_TITLE],
                     size=max(int(math.log1p(row["loc"]) * 10), 10),
                     color=color,
                     title=title,
@@ -248,8 +249,8 @@ def render_code_graph() -> None:
                     borderWidthSelected=3,
                 )
             )
-            for callee in row["calls"]:
-                for m in df.filter(pl.col("name") == callee).iter_rows(named=True):
+            for callee in row[DataframeKeys.KEY_CALLS]:
+                for m in df.filter(pl.col(DataframeKeys.KEY_TITLE) == callee).iter_rows(named=True):
                     edges.append(
                         Edge(
                             source=full_id,
@@ -289,10 +290,75 @@ def render_code_graph() -> None:
             st.session_state.last_selected = key
             idx = full_name_to_idx[key]
             d = df.row(idx, named=True)
-            st.write(f"**Name:** {d['full_name']}")
-            st.write(f"Module: {d['module']}")
+            st.write(f"**Name:** {d[DataframeKeys.KEY_TITLE]}")
+            st.write(f"Module: {d[DataframeKeys.KEY_MODULE]}")
             st.write(f"LOC: {d['loc']}")
             render_call_relations(df, idx)
-            st.code(d["code"])
+            st.code(d[DataframeKeys.KEY_TXT])
         else:
             st.write("Select a node to see details.")
+
+
+def render_chat_with_your_codebase() -> None:
+    """Render the Chat with Your Codebase tab."""
+    repo_path_str = st.session_state.get("selected_repo")
+    if not repo_path_str:
+        st.info("Select a repository from the sidebar.")
+        return
+    repo = Path(repo_path_str)
+
+    def _streamlit_construct_rag_database() -> None:
+        with st.spinner("Building RAG database..."):
+            st.session_state.code_chunks = _build_dataframe(repo)
+            st.session_state.code_chunks_repo = str(repo)
+            st.session_state.rag_database = construct_rag_database(st.session_state.code_chunks)
+
+    st.button("Rebuild RAG database", key="rebuild_rag", on_click=_streamlit_construct_rag_database)
+
+    st.subheader("Chat with Your Codebase")
+    col_left, col_right = st.columns([0.382, 0.618])  # Golden ratio
+
+    with col_left:
+        with st.expander("Options", expanded=False):
+            if st.button("Reset History", key="reset_history_rag"):
+                st.session_state.client.reset_history()
+            with st.expander("Store answer", expanded=True):
+                try:
+                    idx_input = st.text_input("Index of message to save", key="index_input_rag")
+                    idx = int(idx_input) if idx_input.strip() else 0
+                except ValueError:
+                    st.error("Please enter a valid integer")
+                    idx = 0
+                filename = st.text_input("Filename", key="filename_input_rag")
+                if st.button("Save to Markdown", key="save_to_md_rag"):
+                    st.session_state.client.write_to_md(filename, idx)
+                    st.success(f"Chat history saved to {filename}")
+
+        prompt = st.text_area("Send a message", key="left_chat_input_rag", height=200)
+        send_btn = st.button("Send", key="send_btn_rag")
+        st.markdown("---")
+
+    with col_right:
+        st.subheader("Chat Interface")
+        st.markdown("---")
+        st.write("")  # Spacer
+        message_container = st.container()
+        render_messages(message_container)
+
+        if send_btn and prompt:
+            if "rag_database" not in st.session_state:
+                _streamlit_construct_rag_database()
+
+            # Use RAG to retrieve relevant chunks
+            relevant_chunks = asyncio.run(st.session_state.rag_database.rag_process_query(prompt, k_queries=8))
+            relevant_chunks = relevant_chunks.to_polars()
+            st.dataframe(relevant_chunks)
+            context = "\n\n".join(
+                [f"{i + 1}. {chunk[DataframeKeys.KEY_TXT]}" for i, chunk in enumerate(relevant_chunks.iter_rows(named=True))]
+            )
+            augmented_prompt = (
+                f"Use the following context from the codebase to answer the question:\n\n{context}\n\nQuestion: {prompt}"
+            )
+            with st.chat_message("assistant"):
+                st.session_state.client.chat(augmented_prompt)
+                st.rerun()

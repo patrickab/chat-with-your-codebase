@@ -4,7 +4,6 @@ from pathlib import Path
 
 import streamlit as st
 
-from src.codebase_tokenizer import _find_git_repos
 from src.lib.prompts import SYS_DEBUGGING_PROMPT, SYS_JUPYTER_NOTEBOOK, SYS_LEARNING_MATERIAL, SYS_PROFESSOR_EXPLAINS
 from src.openai_client import OpenAIBaseClient
 
@@ -113,6 +112,7 @@ def init_session_state() -> None:
         st.session_state.selected_model = "gpt-4.1-mini"
         st.session_state.client = OpenAIBaseClient(st.session_state.selected_model)
         st.session_state.client.set_system_prompt(SYS_LEARNING_MATERIAL)
+        st.session_state.rag_database_repo = ""
 
 
 def application_side_bar() -> None:
@@ -137,10 +137,23 @@ def application_side_bar() -> None:
     if model != st.session_state.selected_model:
         st.session_state.selected_model = model
 
+    def _find_git_repos(base: Path) -> list[Path]:
+        """Return directories in *base* that contain a .git folder."""
+        return [p for p in base.iterdir() if (p / ".git").exists() and p.is_dir()]
+
     repos = _find_git_repos(Path.home())
     if repos:
-        repo = st.sidebar.selectbox("Repository", repos, format_func=lambda p: p.name)
-        st.session_state.selected_repo = str(repo)
+        repo = st.sidebar.selectbox(
+            "Repository",
+            repos,
+            format_func=lambda p: p.name,
+            index=None,
+            placeholder="Select a repository",
+        )
+        if repo is not None:
+            selected = str(repo)
+            if st.session_state.get("selected_repo") != selected:
+                st.session_state.selected_repo = selected
     else:
         st.sidebar.info("No Git repositories found")
 
