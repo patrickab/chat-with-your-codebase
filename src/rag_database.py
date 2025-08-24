@@ -1,7 +1,10 @@
 import asyncio
+import ast
+import io
 from dataclasses import dataclass
 import json
 import os
+import tokenize
 
 import numpy as np
 from openai import OpenAI
@@ -19,7 +22,8 @@ class DataframeKeys:
 
     KEY_TITLE = "title"
     KEY_TXT = "text"
-    KEY_EMBEDDINGS = "embeddings"
+    KEY_NL_EMBEDDINGS = "nl_embeddings"
+    KEY_CODE_EMBEDDINGS = "code_embeddings"
     KEY_SIMILARITIES = "similarities"
 
 
@@ -28,9 +32,64 @@ RAG_SCHEMA = pl.DataFrame(
     schema={
         DataframeKeys.KEY_TITLE: pl.Utf8,
         DataframeKeys.KEY_TXT: pl.Utf8,
-        DataframeKeys.KEY_EMBEDDINGS: pl.List(pl.Float64),
+        DataframeKeys.KEY_NL_EMBEDDINGS: pl.List(pl.Float64),
+        DataframeKeys.KEY_CODE_EMBEDDINGS: pl.List(pl.Float64),
     }
 )
+
+
+def split_code_chunk(code_chunk: str) -> tuple[str, str]:
+    """Split a code chunk into natural language and code components.
+
+    The *natural language* part consists of the signature together with any
+    docstring and inline comments.  The *code* part contains the signature and
+    the executable code with docstrings and comments removed.
+    """
+
+    # Parse the chunk to obtain the first definition (function/class)
+    try:
+        module = ast.parse(code_chunk)
+        node = module.body[0]
+    except Exception:
+        return code_chunk, code_chunk
+
+    lines = code_chunk.splitlines()
+    signature = lines[0].strip() if lines else ""
+
+    # Extract docstring
+    docstring = ast.get_docstring(node) or ""
+
+    # Collect comments using tokenize
+    comments: list[str] = []
+    for tok in tokenize.generate_tokens(io.StringIO(code_chunk).readline):
+        if tok.type == tokenize.COMMENT:
+            comments.append(tok.string)
+
+    natural_language_parts = [signature]
+    if docstring:
+        natural_language_parts.append(f'"""{docstring}"""')
+    natural_language_parts.extend(comments)
+    natural_language_chunk = "\n".join(natural_language_parts).strip()
+
+    # Remove docstring from AST and unparse to code-only representation
+    try:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            body = node.body
+            if (
+                body
+                and isinstance(body[0], ast.Expr)
+                and isinstance(getattr(body[0], "value", None), ast.Constant)
+                and isinstance(body[0].value.value, str)
+            ):
+                body = body[1:]
+                node.body = body
+            code_chunk_clean = ast.unparse(node)
+        else:
+            code_chunk_clean = code_chunk
+    except Exception:
+        code_chunk_clean = code_chunk
+
+    return natural_language_chunk, code_chunk_clean
 
 
 @dataclass
@@ -133,6 +192,15 @@ class EmbeddingModel:
         all_embeddings = await asyncio.gather(*tasks)
         return np.array(all_embeddings)
 
+    async def embed_code_pairs(
+        self, natural_language_texts: list[str], code_texts: list[str]
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Embed natural language and code chunks separately."""
+
+        nl_embeddings = await self.batch_embed(natural_language_texts)
+        code_embeddings = await self.batch_embed(code_texts)
+        return nl_embeddings, code_embeddings
+
 
 class VectorDB:
     """A simple in-memory vector database using Polars and NumPy."""
@@ -145,32 +213,46 @@ class VectorDB:
             raise ValueError(error_msg)
 
     def similarity_search(self, query_vector: np.ndarray, k_queries: int = 20) -> RAGResponse:
+        """Search for similar vectors using Reciprocal Rank Fusion (RRF).
+
+        Both natural language and code embeddings are compared against the
+        provided query vector. The individual rankings are fused using RRF with
+        ``k=60``.
         """
-        Search for similar vectors in the database using cosine similarity.
 
-        Parameters:
-            query_vector (np.ndarray): Query vector of shape (embedding_dim,)
-            k_queries (int): Number of top similarity results to return.
+        nl_vectors = np.stack(self.database[DataframeKeys.KEY_NL_EMBEDDINGS].to_list())
+        code_vectors = np.stack(self.database[DataframeKeys.KEY_CODE_EMBEDDINGS].to_list())
 
-        Returns:
-            RAGResponse
-        """
-        db_vectors = np.stack(self.database[DataframeKeys.KEY_EMBEDDINGS].to_list())
-
-        # Compute cosine similarity
-        dot_product = np.dot(db_vectors, query_vector)
-        db_norms = np.linalg.norm(db_vectors, axis=1)
+        # Compute cosine similarities
         query_norm = np.linalg.norm(query_vector)
-        cosine_similarities = dot_product / (db_norms * query_norm)
 
-        # Get top-k indices
-        top_indices = np.argsort(cosine_similarities)[-k_queries:][::-1]
+        def _cos_sim(vectors: np.ndarray) -> np.ndarray:
+            dot = np.dot(vectors, query_vector)
+            norms = np.linalg.norm(vectors, axis=1)
+            return dot / (norms * query_norm)
+
+        nl_sim = _cos_sim(nl_vectors)
+        code_sim = _cos_sim(code_vectors)
+
+        # Obtain rankings (higher similarity -> better rank)
+        nl_rank = np.argsort(nl_sim)[::-1]
+        code_rank = np.argsort(code_sim)[::-1]
+        nl_rank_map = {idx: rank for rank, idx in enumerate(nl_rank)}
+        code_rank_map = {idx: rank for rank, idx in enumerate(code_rank)}
+
+        k = 60
+        rrf_scores = [
+            1 / (k + nl_rank_map[i] + 1) + 1 / (k + code_rank_map[i] + 1)
+            for i in range(len(self.database))
+        ]
+
+        top_indices = np.argsort(rrf_scores)[-k_queries:][::-1]
         df_top_k = self.database[top_indices]
 
         return RAGResponse(
             titles=df_top_k[DataframeKeys.KEY_TITLE].to_list(),
             texts=df_top_k[DataframeKeys.KEY_TXT].to_list(),
-            similarities=cosine_similarities[top_indices].tolist(),
+            similarities=[rrf_scores[i] for i in top_indices],
         )
 
 
