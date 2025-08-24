@@ -2,7 +2,13 @@ from __future__ import annotations
 import streamlit as st
 
 from src.codebase_tokenizer import render_code_graph, render_codebase_tokenizer
-from src.lib.streamlit_helper import application_side_bar, apply_custom_style, init_session_state, render_messages
+from src.lib.bm25_search import bm25_search, build_context
+from src.lib.streamlit_helper import (
+    application_side_bar,
+    apply_custom_style,
+    init_session_state,
+    render_messages,
+)
 
 
 def _chat_interface() -> None:
@@ -36,9 +42,33 @@ def _chat_interface() -> None:
         render_messages(message_container)
 
         if send_btn and prompt:
+            user_prompt = prompt
+            if st.session_state.context_enabled and "code_chunks" in st.session_state:
+                chunks = bm25_search(prompt, st.session_state.code_chunks)
+                context = build_context(chunks)
+                if context:
+                    user_prompt = f"Context:\n{context}\n\nQuestion:\n{prompt}"
             with st.chat_message("assistant"):
-                st.session_state.client.chat(prompt)
+                st.session_state.client.chat(user_prompt)
                 st.rerun()
+
+
+def _bm25_testing_interface() -> None:
+    """Expose BM25 search results without sending a chat request."""
+
+    if "code_chunks" not in st.session_state:
+        st.info("No code chunks loaded")
+        return
+
+    query = st.text_input("Search query", key="test_query")
+    if st.button("Run BM25 search", key="test_button") and query:
+        import polars as pl
+
+        chunks = bm25_search(query, st.session_state.code_chunks)
+        if chunks:
+            st.dataframe(pl.DataFrame(chunks))
+        else:
+            st.info("No matching code chunks found")
 
 
 def main() -> None:
@@ -50,10 +80,15 @@ def main() -> None:
     init_session_state()
     application_side_bar()
 
-    chat_interface, work_in_progress = st.tabs(["OpenAI - Custom Chat Interface", "Work in Progress"])
+    chat_interface, testing_tab, work_in_progress = st.tabs(
+        ["OpenAI - Custom Chat Interface", "BM25 Retrieval Test", "Work in Progress"]
+    )
 
     with chat_interface:
         _chat_interface()
+
+    with testing_tab:
+        _bm25_testing_interface()
 
     with work_in_progress:
         tokenizer_tab, graph_tab = st.tabs(["Codebase Tokenizer", "Code Graph"])
