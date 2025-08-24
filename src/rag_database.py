@@ -140,46 +140,24 @@ class EmbeddingModel:
         )
         self.tokenizer = tiktoken.get_encoding(MODEL_NAME)
 
-    def split_text(self, text_to_split: str, max_tokens: int) -> list[str]:
-        """Split text into chunks of a maximum token size."""
-        tokens = self.tokenizer.encode(text_to_split)
-        token_chunks = [tokens[i : i + max_tokens] for i in range(0, len(tokens), max_tokens)]
-        return [self.tokenizer.decode(chunk) for chunk in token_chunks]
-
     async def embed(self, text: str) -> np.ndarray:
         """
         Asynchronously embed a single text into a dense vector.
         """
-        original_tokens = self.tokenizer.encode(text)
-
-        chunks = self.split_text(text, MAX_TOKENS) if len(original_tokens) > MAX_TOKENS else [text]
-
-        # Request embeddings for each chunk asynchronously
-        async def get_embedding(chunk):  # noqa
-            return await self.client.embeddings.create(
-                input=chunk,
-                model=MODEL_NAME,
-                dimensions=EMBEDDING_DIMENSIONS,
-                timeout=60,
+        token_count = len(self.tokenizer.encode(text))
+        if token_count > MAX_TOKENS:
+            print(
+                f"Warning: text has {token_count} tokens which exceeds the maximum of {MAX_TOKENS}."
             )
 
-        chunk_embeddings = await asyncio.gather(*[get_embedding(chunk) for chunk in chunks])
+        response = await self.client.embeddings.create(
+            input=text,
+            model=MODEL_NAME,
+            dimensions=EMBEDDING_DIMENSIONS,
+            timeout=60,
+        )
 
-        if len(chunk_embeddings) == 1:
-            final_embedding = np.array(chunk_embeddings[0].data[0].embedding)
-        else:
-            # Weighted average based on token counts
-            chunk_token_counts = [len(self.tokenizer.encode(chunk)) for chunk in chunks]
-            total_tokens = sum(chunk_token_counts)
-            weights = [count / total_tokens for count in chunk_token_counts]
-
-            final_embedding = np.average(
-                [response.data[0].embedding for response in chunk_embeddings],
-                axis=0,
-                weights=weights,
-            )
-
-        return final_embedding
+        return np.array(response.data[0].embedding)
 
     async def batch_embed(self, texts: list[str]) -> np.ndarray:
         """
