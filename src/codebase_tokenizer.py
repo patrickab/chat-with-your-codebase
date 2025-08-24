@@ -182,13 +182,20 @@ def render_code_graph() -> None:
 
     repo_path_str = st.session_state.get("selected_repo")
     if not repo_path_str:
-        st.info("Select a repository from the sidebar.")
+        st.markdown(
+            "<div class='empty-state'><h2>No repo selected</h2></div>",
+            unsafe_allow_html=True,
+        )
+        st.button("Choose a repository from the sidebar")
         return
     repo = Path(repo_path_str)
 
     if "code_chunks_repo" not in st.session_state or st.session_state.code_chunks_repo != str(repo):
+        placeholder = st.empty()
+        placeholder.markdown("<div class='skeleton'></div>", unsafe_allow_html=True)
         st.session_state.code_chunks = _build_dataframe(repo)
         st.session_state.code_chunks_repo = str(repo)
+        placeholder.empty()
 
     df = st.session_state.code_chunks
 
@@ -205,12 +212,12 @@ def render_code_graph() -> None:
     community_map = {n: idx for idx, comm in enumerate(communities) for n in comm}
 
     palette = [
-        "#A3B18A",
-        "#D9AE94",
-        "#F4D35E",
-        "#CCE3DE",
-        "#BCB8B1",
-        "#9DACB2",
+        "#FF6B6B",
+        "#4ECDC4",
+        "#FFD93D",
+        "#1A535C",
+        "#FF6F91",
+        "#6A4C93",
     ]
     color_cycle = cycle(palette)
     module_colors = {m: next(color_cycle) for m in df["module"].unique().to_list()}
@@ -240,7 +247,14 @@ def render_code_graph() -> None:
         )
         for callee in row["calls"]:
             for m in df.filter(pl.col("name") == callee).iter_rows(named=True):
-                edges.append(Edge(source=full_id, target=m["full_name"]))
+                edges.append(
+                    Edge(
+                        source=full_id,
+                        target=m["full_name"],
+                        color="rgba(255,255,255,0.25)",
+                        smooth=True,
+                    )
+                )
 
     config = Config(
         width="100%",
@@ -250,7 +264,19 @@ def render_code_graph() -> None:
         physics=graph_type != "Hierarchy",
     )
 
+    st.markdown("<div class='graph-card'>", unsafe_allow_html=True)
     selected = agraph(nodes=nodes, edges=edges, config=config)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    legend_html = """
+    <div class='legend'>
+        <strong>Legend</strong><br/>
+        Color → module/community<br/>
+        Size → LOC<br/>
+        Stroke → selected
+    </div>
+    """
+    st.markdown(legend_html, unsafe_allow_html=True)
 
     full_name_to_idx = {df.row(i, named=True)["full_name"]: i for i in range(df.height)}
     with st.expander("Details", expanded=True):

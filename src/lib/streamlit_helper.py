@@ -13,17 +13,38 @@ def apply_custom_style() -> None:
     st.markdown(
         """
         <style>
-        /* Overall app background and text color with Cascadia Code */
+        /* Spacing scale */
+        :root {
+            --space-8: 8px;
+            --space-12: 12px;
+            --space-16: 16px;
+            --space-24: 24px;
+        }
+
+        /* Overall app background and text color */
         .stApp {
-            background-color: #121212;
+            background-color: #181818;
             color: #e0e0e0;
             font-family: 'Cascadia Code', 'Georgia', 'Times New Roman', serif;
         }
 
-        /* General text inherits Cascadia Code */
-        p, div, span, h1, h2, h3, h4, h5, h6 {
-            color: #e0e0e0;
-            font-family: 'Cascadia Code', 'Georgia', 'Times New Roman', serif;
+        /* Increase left/right padding */
+        .main .block-container {
+            padding-left: var(--space-24);
+            padding-right: var(--space-24);
+        }
+
+        /* Typography hierarchy */
+        h1 {
+            font-size: 2.5rem;
+        }
+
+        h2, h3 {
+            font-size: 1.5rem;
+        }
+
+        label, .label {
+            font-size: 0.875rem;
         }
 
         /* Input elements with matching dark theme */
@@ -36,7 +57,7 @@ def apply_custom_style() -> None:
         /* Code, pre, and LaTeX math uses Roboto Mono with default coloring */
         code, pre, .math {
             font-family: 'Roboto Mono', monospace;
-            background-color: #1e1e1e; /* subtle dark block background */
+            background-color: #1e1e1e;
             padding: 4px 6px;
             border-radius: 6px;
             line-height: 1.4;
@@ -54,6 +75,53 @@ def apply_custom_style() -> None:
         code:hover {
             background-color: #2a2a2a;
             cursor: text;
+        }
+
+        /* Graph card styling */
+        .graph-card {
+            position: relative;
+            background-color: #1e1e1e;
+            border-radius: var(--space-8);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+            padding: var(--space-16);
+            margin-top: var(--space-16);
+        }
+
+        /* Persistent legend */
+        .legend {
+            position: fixed;
+            top: var(--space-24);
+            right: var(--space-24);
+            background: rgba(30, 30, 30, 0.9);
+            padding: var(--space-12);
+            border-radius: var(--space-8);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+            font-size: 0.875rem;
+            z-index: 1000;
+        }
+
+        /* Skeleton shimmer */
+        .skeleton {
+            height: 600px;
+            border-radius: var(--space-8);
+            background: linear-gradient(90deg, #1e1e1e 25%, #2a2a2a 37%, #1e1e1e 63%);
+            background-size: 400% 100%;
+            animation: shimmer 1.4s ease infinite;
+        }
+
+        @keyframes shimmer {
+            0% {
+                background-position: 100% 0;
+            }
+            100% {
+                background-position: 0 0;
+            }
+        }
+
+        /* Friendly empty state */
+        .empty-state {
+            text-align: center;
+            padding: var(--space-24);
         }
         </style>
         """,
