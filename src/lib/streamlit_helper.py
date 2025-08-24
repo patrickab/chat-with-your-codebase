@@ -81,17 +81,6 @@ def apply_custom_style() -> None:
             margin-bottom: 16px;
         }
 
-        .graph-legend {
-            position: absolute;
-            top: 16px;
-            right: 24px;
-            background: rgba(30,30,30,0.8);
-            padding: 8px 12px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.5);
-            font-size: 14px;
-        }
-
         /* Skeleton loader for graph */
         .graph-skeleton {
             height: 600px;
