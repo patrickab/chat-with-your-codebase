@@ -1,19 +1,16 @@
 """Streamlit tab to tokenize codebases into chunks."""
-# ruff: noqa: I001
-
-from __future__ import annotations
 
 import ast
-import math
-import subprocess
 from itertools import cycle
+import math
 from pathlib import Path
+import subprocess
 from typing import Iterable
 
-import networkx as nx
+import networkx as nx  # type: ignore
 import polars as pl
 import streamlit as st
-from streamlit_agraph import Config, Edge, Node, agraph
+from streamlit_agraph import Config, Edge, Node, agraph  # type: ignore
 
 
 def render_call_relations(df: pl.DataFrame, idx: int) -> None:
@@ -119,20 +116,20 @@ def _build_dataframe(repo_path: Path) -> pl.DataFrame:
                         "kind": "class" if isinstance(node, ast.ClassDef) else "function",
                         "code": code,
                         "calls": _find_calls(node, custom_names),
-                        "loc": end - start,
+                        "loc": end - start,  # type: ignore
                         "docstring": ast.get_docstring(node) or "",
                     }
                 )
 
     # Determine which chunks are called by others
-    called_by_map: dict[str, list[str]] = {chunk["name"]: [] for chunk in chunks}
+    called_by_map: dict[str, list[str]] = {chunk["name"]: [] for chunk in chunks}  # type: ignore
     for chunk in chunks:
-        for callee in chunk["calls"]:
+        for callee in chunk["calls"]:  # type: ignore
             if callee in called_by_map:
-                called_by_map[callee].append(chunk["name"])
+                called_by_map[callee].append(chunk["name"])  # type: ignore
 
     for chunk in chunks:
-        chunk["called_by"] = sorted(called_by_map.get(chunk["name"], []))
+        chunk["called_by"] = sorted(called_by_map.get(chunk["name"], []))  # type: ignore
 
     df = pl.DataFrame(chunks)
     return df.select(
@@ -189,7 +186,6 @@ def render_code_graph() -> None:
         st.button("Select repository", key="select_repo")
         return
     repo = Path(repo_path_str)
-
 
     if "code_chunks_repo" not in st.session_state or st.session_state.code_chunks_repo != str(repo):
         st.session_state.code_chunks = _build_dataframe(repo)
@@ -271,9 +267,9 @@ def render_code_graph() -> None:
         }
         st.session_state.graph_cache_key = cache_key
     else:
-        nodes = cache["nodes"]
-        edges = cache["edges"]
-        full_name_to_idx = cache["full_name_to_idx"]
+        nodes = cache["nodes"]  # type: ignore
+        edges = cache["edges"]  # type: ignore
+        full_name_to_idx = cache["full_name_to_idx"]  # type: ignore
 
     config = Config(
         width="100%",
