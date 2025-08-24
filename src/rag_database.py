@@ -1,7 +1,7 @@
-import asyncio
 import ast
-import io
+import asyncio
 from dataclasses import dataclass
+import io
 import json
 import os
 import tokenize
@@ -138,9 +138,7 @@ class EmbeddingModel:
         self.client = AsyncOpenAI(api_key=API_KEY)
         self.tokenizer = tiktoken.get_encoding(MODEL_NAME)
 
-    def preprocess_chunks(
-        self, code_chunks: list[str]
-    ) -> tuple[list[str], list[str]]:
+    def preprocess_chunks(self, code_chunks: list[str]) -> tuple[list[str], list[str]]:
         """Split chunks and warn if they exceed the token limit."""
 
         nl_texts: list[str] = []
@@ -189,9 +187,7 @@ class EmbeddingModel:
         )
         return np.array([d.embedding for d in response.data])
 
-    async def embed_code_pairs(
-        self, natural_language_texts: list[str], code_texts: list[str]
-    ) -> tuple[np.ndarray, np.ndarray]:
+    async def embed_code_pairs(self, natural_language_texts: list[str], code_texts: list[str]) -> tuple[np.ndarray, np.ndarray]:
         """Embed natural language and code chunks separately."""
 
         nl_task = self.embed_batch(natural_language_texts)
@@ -239,10 +235,7 @@ class VectorDB:
         code_rank_map = {idx: rank for rank, idx in enumerate(code_rank)}
 
         k = 60
-        rrf_scores = [
-            1 / (k + nl_rank_map[i] + 1) + 1 / (k + code_rank_map[i] + 1)
-            for i in range(len(self.database))
-        ]
+        rrf_scores = [1 / (k + nl_rank_map[i] + 1) + 1 / (k + code_rank_map[i] + 1) for i in range(len(self.database))]
 
         top_indices = np.argsort(rrf_scores)[-k_queries:][::-1]
         df_top_k = self.database[top_indices]
