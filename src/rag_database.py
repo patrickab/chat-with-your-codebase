@@ -7,7 +7,7 @@ import os
 import tokenize
 
 import numpy as np
-from openai import OpenAI
+from openai import AsyncOpenAI
 import polars as pl
 import tiktoken
 
@@ -134,49 +134,69 @@ class EmbeddingModel:
     """Wrapper for the OpenAI Embedding Model"""
 
     def __init__(self) -> None:
-        """Initialize the embedding model client and tokenizer."""
-        self.client = OpenAI(
-            api_key=API_KEY,
-        )
+        """Initialize the async embedding client and tokenizer."""
+        self.client = AsyncOpenAI(api_key=API_KEY)
         self.tokenizer = tiktoken.get_encoding(MODEL_NAME)
 
+    def preprocess_chunks(
+        self, code_chunks: list[str]
+    ) -> tuple[list[str], list[str]]:
+        """Split chunks and warn if they exceed the token limit."""
+
+        nl_texts: list[str] = []
+        code_texts: list[str] = []
+        for chunk in code_chunks:
+            nl_chunk, code_chunk = split_code_chunk(chunk)
+            nl_tokens = len(self.tokenizer.encode(nl_chunk))
+            code_tokens = len(self.tokenizer.encode(code_chunk))
+            if nl_tokens > MAX_TOKENS:
+                print(
+                    f"Warning: natural language chunk has {nl_tokens} tokens which exceeds the maximum of {MAX_TOKENS}.",
+                )
+            if code_tokens > MAX_TOKENS:
+                print(
+                    f"Warning: code chunk has {code_tokens} tokens which exceeds the maximum of {MAX_TOKENS}.",
+                )
+            nl_texts.append(nl_chunk)
+            code_texts.append(code_chunk)
+        return nl_texts, code_texts
+
     async def embed(self, text: str) -> np.ndarray:
-        """
-        Asynchronously embed a single text into a dense vector.
-        """
+        """Embed a single text."""
+
         token_count = len(self.tokenizer.encode(text))
         if token_count > MAX_TOKENS:
             print(
-                f"Warning: text has {token_count} tokens which exceeds the maximum of {MAX_TOKENS}."
+                f"Warning: text has {token_count} tokens which exceeds the maximum of {MAX_TOKENS}.",
             )
 
         response = await self.client.embeddings.create(
-            input=text,
+            input=[text],
             model=MODEL_NAME,
             dimensions=EMBEDDING_DIMENSIONS,
             timeout=60,
         )
-
         return np.array(response.data[0].embedding)
 
-    async def batch_embed(self, texts: list[str]) -> np.ndarray:
-        """
-        Asynchronously embed a list of texts into dense vectors.
+    async def embed_batch(self, texts: list[str]) -> np.ndarray:
+        """Embed many texts in one API call."""
 
-        Returns:
-            A 2D numpy array of shape (len(texts), embedding dimension)
-        """
-        tasks = [self.embed(text) for text in texts]
-        all_embeddings = await asyncio.gather(*tasks)
-        return np.array(all_embeddings)
+        response = await self.client.embeddings.create(
+            input=texts,
+            model=MODEL_NAME,
+            dimensions=EMBEDDING_DIMENSIONS,
+            timeout=60,
+        )
+        return np.array([d.embedding for d in response.data])
 
     async def embed_code_pairs(
         self, natural_language_texts: list[str], code_texts: list[str]
     ) -> tuple[np.ndarray, np.ndarray]:
         """Embed natural language and code chunks separately."""
 
-        nl_embeddings = await self.batch_embed(natural_language_texts)
-        code_embeddings = await self.batch_embed(code_texts)
+        nl_task = self.embed_batch(natural_language_texts)
+        code_task = self.embed_batch(code_texts)
+        nl_embeddings, code_embeddings = await asyncio.gather(nl_task, code_task)
         return nl_embeddings, code_embeddings
 
 
