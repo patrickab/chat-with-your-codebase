@@ -178,69 +178,102 @@ def render_codebase_tokenizer() -> None:
 def render_code_graph() -> None:
     """Render a graph view of the codebase using agraph."""
 
-    st.subheader("Codebase Graph")
+    st.markdown("<h1 class='graph-title'>Codebase Graph</h1>", unsafe_allow_html=True)
 
     repo_path_str = st.session_state.get("selected_repo")
     if not repo_path_str:
-        st.info("Select a repository from the sidebar.")
+        st.markdown(
+            "<div class='graph-card'><h2>No repo selected</h2><p>Select a repository from the sidebar to see the graph.</p></div>",
+            unsafe_allow_html=True,
+        )
+        st.button("Select repository", key="select_repo")
         return
     repo = Path(repo_path_str)
+
 
     if "code_chunks_repo" not in st.session_state or st.session_state.code_chunks_repo != str(repo):
         st.session_state.code_chunks = _build_dataframe(repo)
         st.session_state.code_chunks_repo = str(repo)
 
     df = st.session_state.code_chunks
-
-    # Build NetworkX graph for Louvain clustering
-    G = nx.DiGraph()
-    for row in df.iter_rows(named=True):
-        src = row["full_name"]
-        G.add_node(src)
-        for callee in row["calls"]:
-            for m in df.filter(pl.col("name") == callee).iter_rows(named=True):
-                G.add_edge(src, m["full_name"])
-
-    communities = list(nx.algorithms.community.louvain_communities(G.to_undirected()))
-    community_map = {n: idx for idx, comm in enumerate(communities) for n in comm}
-
-    palette = [
-        "#A3B18A",
-        "#D9AE94",
-        "#F4D35E",
-        "#CCE3DE",
-        "#BCB8B1",
-        "#9DACB2",
-    ]
-    color_cycle = cycle(palette)
-    module_colors = {m: next(color_cycle) for m in df["module"].unique().to_list()}
-    community_colors = {i: next(color_cycle) for i in range(len(communities))}
-
     graph_type = st.radio("Graph type", ["Hierarchy", "Louvain"], horizontal=True)
 
-    nodes: list[Node] = []
-    edges: list[Edge] = []
-    for row in df.iter_rows(named=True):
-        full_id = row["full_name"]
-        color = (
-            module_colors[row["module"]]
-            if graph_type == "Hierarchy"
-            else community_colors.get(community_map.get(full_id, 0), "#AEC6CF")
-        )
-        title = f"{row['name']}\n{row['docstring']}\nModule: {row['module']}\nLOC: {row['loc']}"
-        nodes.append(
-            Node(
-                id=full_id,
-                label=row["name"],
-                size=max(int(math.log1p(row["loc"]) * 10), 10),
-                color=color,
-                title=title,
-                font={"size": 16},
+    cache_key = (str(repo), graph_type)
+    cache = st.session_state.get("graph_cache")
+    needs_build = st.session_state.get("graph_cache_key") != cache_key
+    placeholder = st.empty()
+    if needs_build:
+        with placeholder:
+            st.markdown("<div class='graph-skeleton'></div>", unsafe_allow_html=True)
+
+    if needs_build:
+        G = nx.DiGraph()
+        for row in df.iter_rows(named=True):
+            src = row["full_name"]
+            G.add_node(src)
+            for callee in row["calls"]:
+                for m in df.filter(pl.col("name") == callee).iter_rows(named=True):
+                    G.add_edge(src, m["full_name"])
+
+        communities = list(nx.algorithms.community.louvain_communities(G.to_undirected()))
+        community_map = {n: idx for idx, comm in enumerate(communities) for n in comm}
+
+        palette = [
+            "#ff6b6b",
+            "#ffd93d",
+            "#6bcb77",
+            "#4d96ff",
+            "#f06595",
+            "#f8961e",
+        ]
+        color_cycle = cycle(palette)
+        module_colors = {m: next(color_cycle) for m in df["module"].unique().to_list()}
+        community_colors = {i: next(color_cycle) for i in range(len(communities))}
+
+        nodes: list[Node] = []
+        edges: list[Edge] = []
+        for row in df.iter_rows(named=True):
+            full_id = row["full_name"]
+            color = (
+                module_colors[row["module"]]
+                if graph_type == "Hierarchy"
+                else community_colors.get(community_map.get(full_id, 0), "#AEC6CF")
             )
-        )
-        for callee in row["calls"]:
-            for m in df.filter(pl.col("name") == callee).iter_rows(named=True):
-                edges.append(Edge(source=full_id, target=m["full_name"]))
+            title = f"{row['name']}\n{row['docstring']}\nModule: {row['module']}\nLOC: {row['loc']}"
+            nodes.append(
+                Node(
+                    id=full_id,
+                    label=row["name"],
+                    size=max(int(math.log1p(row["loc"]) * 10), 10),
+                    color=color,
+                    title=title,
+                    font={"size": 12},
+                    borderWidth=1,
+                    borderWidthSelected=3,
+                )
+            )
+            for callee in row["calls"]:
+                for m in df.filter(pl.col("name") == callee).iter_rows(named=True):
+                    edges.append(
+                        Edge(
+                            source=full_id,
+                            target=m["full_name"],
+                            color="rgba(255,255,255,0.25)",
+                            smooth=True,
+                        )
+                    )
+
+        full_name_to_idx = {df.row(i, named=True)["full_name"]: i for i in range(df.height)}
+        st.session_state.graph_cache = {
+            "nodes": nodes,
+            "edges": edges,
+            "full_name_to_idx": full_name_to_idx,
+        }
+        st.session_state.graph_cache_key = cache_key
+    else:
+        nodes = cache["nodes"]
+        edges = cache["edges"]
+        full_name_to_idx = cache["full_name_to_idx"]
 
     config = Config(
         width="100%",
@@ -248,11 +281,12 @@ def render_code_graph() -> None:
         directed=True,
         hierarchical=graph_type == "Hierarchy",
         physics=graph_type != "Hierarchy",
+        backgroundColor="#1a1a1a",
     )
 
-    selected = agraph(nodes=nodes, edges=edges, config=config)
+    placeholder.empty()
 
-    full_name_to_idx = {df.row(i, named=True)["full_name"]: i for i in range(df.height)}
+    selected = agraph(nodes=nodes, edges=edges, config=config)
     with st.expander("Details", expanded=True):
         key = selected or st.session_state.get("last_selected")
         if key and key in full_name_to_idx:

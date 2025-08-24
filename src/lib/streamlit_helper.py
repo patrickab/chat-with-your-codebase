@@ -55,6 +55,46 @@ def apply_custom_style() -> None:
             background-color: #2a2a2a;
             cursor: text;
         }
+
+        /* Increase default page padding */
+        .block-container {
+            padding-left: 3rem;
+            padding-right: 3rem;
+        }
+
+        /* Card styling for graph area */
+        div[data-testid="stAgraph"], .graph-card {
+            background: #1a1a1a;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+            position: relative;
+        }
+
+        div[data-testid="stAgraph"] canvas {
+            background-color: #1a1a1a !important;
+        }
+
+        /* Typography hierarchy */
+        .graph-title {
+            font-size: 32px;
+            margin-bottom: 16px;
+        }
+
+        /* Skeleton loader for graph */
+        .graph-skeleton {
+            height: 600px;
+            border-radius: 12px;
+            background: linear-gradient(-90deg,#1a1a1a 0%,#2a2a2a 50%,#1a1a1a 100%);
+            background-size: 400% 400%;
+            animation: shimmer 1.2s ease-in-out infinite;
+            margin-bottom: 24px;
+        }
+
+        @keyframes shimmer {
+            0% {background-position: 200% 0;}
+            100% {background-position: -200% 0;}
+        }
         </style>
         """,
         unsafe_allow_html=True,
