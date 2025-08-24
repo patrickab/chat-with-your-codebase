@@ -114,6 +114,9 @@ def init_session_state() -> None:
         st.session_state.client = OpenAIBaseClient(st.session_state.selected_model)
         st.session_state.client.set_system_prompt(SYS_LEARNING_MATERIAL)
 
+    if "context_enabled" not in st.session_state:
+        st.session_state.context_enabled = False
+
 
 def application_side_bar() -> None:
     model = st.sidebar.selectbox(
@@ -143,6 +146,12 @@ def application_side_bar() -> None:
         st.session_state.selected_repo = str(repo)
     else:
         st.sidebar.info("No Git repositories found")
+
+    st.session_state.context_enabled = st.sidebar.checkbox(
+        "Enable context aware chat",
+        value=st.session_state.context_enabled,
+        key="context_checkbox",
+    )
 
 
 def render_messages(message_container) -> None:  # noqa
