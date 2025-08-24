@@ -178,13 +178,21 @@ def render_codebase_tokenizer() -> None:
 def render_code_graph() -> None:
     """Render a graph view of the codebase using agraph."""
 
-    st.subheader("Codebase Graph")
+    st.markdown("<h1 class='graph-title'>Codebase Graph</h1>", unsafe_allow_html=True)
 
     repo_path_str = st.session_state.get("selected_repo")
     if not repo_path_str:
-        st.info("Select a repository from the sidebar.")
+        st.markdown(
+            "<div class='graph-card'><h2>No repo selected</h2><p>Select a repository from the sidebar to see the graph.</p></div>",
+            unsafe_allow_html=True,
+        )
+        st.button("Select repository", key="select_repo")
         return
     repo = Path(repo_path_str)
+
+    placeholder = st.empty()
+    with placeholder:
+        st.markdown("<div class='graph-skeleton'></div>", unsafe_allow_html=True)
 
     if "code_chunks_repo" not in st.session_state or st.session_state.code_chunks_repo != str(repo):
         st.session_state.code_chunks = _build_dataframe(repo)
@@ -205,12 +213,12 @@ def render_code_graph() -> None:
     community_map = {n: idx for idx, comm in enumerate(communities) for n in comm}
 
     palette = [
-        "#A3B18A",
-        "#D9AE94",
-        "#F4D35E",
-        "#CCE3DE",
-        "#BCB8B1",
-        "#9DACB2",
+        "#ff6b6b",
+        "#ffd93d",
+        "#6bcb77",
+        "#4d96ff",
+        "#f06595",
+        "#f8961e",
     ]
     color_cycle = cycle(palette)
     module_colors = {m: next(color_cycle) for m in df["module"].unique().to_list()}
@@ -235,12 +243,21 @@ def render_code_graph() -> None:
                 size=max(int(math.log1p(row["loc"]) * 10), 10),
                 color=color,
                 title=title,
-                font={"size": 16},
+                font={"size": 12},
+                borderWidth=1,
+                borderWidthSelected=3,
             )
         )
         for callee in row["calls"]:
             for m in df.filter(pl.col("name") == callee).iter_rows(named=True):
-                edges.append(Edge(source=full_id, target=m["full_name"]))
+                edges.append(
+                    Edge(
+                        source=full_id,
+                        target=m["full_name"],
+                        color="rgba(255,255,255,0.25)",
+                        smooth=True,
+                    )
+                )
 
     config = Config(
         width="100%",
@@ -248,9 +265,16 @@ def render_code_graph() -> None:
         directed=True,
         hierarchical=graph_type == "Hierarchy",
         physics=graph_type != "Hierarchy",
+        backgroundColor="#1a1a1a",
     )
 
+    placeholder.empty()
+
     selected = agraph(nodes=nodes, edges=edges, config=config)
+    st.markdown(
+        "<div class='graph-legend'><strong>Legend</strong><br/>Color → module/community<br/>Size → LOC<br/>Stroke → selected</div>",
+        unsafe_allow_html=True,
+    )
 
     full_name_to_idx = {df.row(i, named=True)["full_name"]: i for i in range(df.height)}
     with st.expander("Details", expanded=True):
