@@ -190,9 +190,6 @@ def render_code_graph() -> None:
         return
     repo = Path(repo_path_str)
 
-    placeholder = st.empty()
-    with placeholder:
-        st.markdown("<div class='graph-skeleton'></div>", unsafe_allow_html=True)
 
     if "code_chunks_repo" not in st.session_state or st.session_state.code_chunks_repo != str(repo):
         st.session_state.code_chunks = _build_dataframe(repo)
